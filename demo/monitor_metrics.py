@@ -38,11 +38,11 @@ python3 = (sys.version_info[0] >= 3)
 LOGGER_NAME = 'monitor_metrics'
 logger = logging.getLogger(LOGGER_NAME)
 
-metrics_root = "/p4/metrics"
+metrics_root = "/var/lib/prometheus/node-exporter/"
 metrics_file = "locks.prom"
 
 script_name = os.path.basename(os.path.splitext(__file__)[0])
-LOGDIR = os.getenv('LOGS', '/p4/1/logs')
+LOGDIR = os.getenv('LOGS', '/var/log/perforce/')
 
 DEFAULT_LOG_FILE = "log-%s.log" % script_name
 if os.path.exists(LOGDIR):
@@ -63,6 +63,7 @@ class MonitorMetrics:
         self.replicaReadLocks = 0
         self.replicaWriteLocks = 0
         self.blockedCommands = 0
+        self.p4root = "/data/perforce/Perforce"
         self.msgs = []
 
 class P4Monitor(object):
@@ -75,7 +76,7 @@ class P4Monitor(object):
         self.serverid_label = ""
         if self.options.sdp_instance:
             self.sdpinst_label = ',sdpinst="%s"' % self.options.sdp_instance
-            with open("/p4/%s/root/server.id" % self.options.sdp_instance, "r") as f:
+            with open("/%s/server.id" % self.p4root, "r") as f:
                 self.serverid_label = 'serverid="%s"' % f.read().rstrip()
 
     def parse_args(self, doc, args):

@@ -24,8 +24,8 @@ fi
 # Configuration section
 
 # This might also be /hxlogs/metrics or passed as a parameter (with -m flag)
-metrics_root=/p4/metrics
-data_file=/p4/monitor_metrics.dat
+metrics_root=/var/lib/prometheus/node-exporter/
+data_file=/data/perforce/metrics/monitor_metrics.dat
 # ============================================================
 
 function msg () { echo -e "$*"; }
@@ -101,10 +101,12 @@ if [[ $UseSDP -eq 1 ]]; then
     p4logfile="$P4LOG"
     errors_file="$LOGS/errors.csv"
 else
+    SDP_INSTANCE="Unset"
     p4port=${Port:-$P4PORT}
     p4user=${User:-$P4USER}
     p4="p4 -u $p4user -p $p4port"
     $p4 info -s || bail "Can't connect to P4PORT: $p4port"
+    p4root=$($p4 configure show | grep P4ROOT | awk -F'=| ' '{print $2}')
     sdpinst_label=""
     sdpinst_suffix=""
     p4logfile=$($p4 configure show | grep P4LOG | sed -e 's/P4LOG=//' -e 's/ .*//')
@@ -118,7 +120,7 @@ else
 fi
 
 # Get server id
-SERVER_ID=$($p4 serverid | awk '{print $3}')
+SERVER_ID=$($p4 configure show  | egrep serverid | awk -F'=| ' '{print $2}')
 SERVER_ID=${SERVER_ID:-noserverid}
 serverid_label="serverid=\"$SERVER_ID\""
 
@@ -221,19 +223,13 @@ monitor_processes () {
 }
 
 monitor_completed_cmds () {
-    # Metric for completed commands by parsing log file - auto-skipped for large log files
+    # Metric for completed commands by parsing log file
     local num_cmds=0
     fname="$metrics_root/p4_completed_cmds${sdpinst_suffix}-${SERVER_ID}.prom"
     tmpfname="$fname.$$"
 
     # If the logfile doesnt exist delete prom and return
     [[ -f "$p4logfile" ]] || { rm -f "$fname"; return ; }
-
-    # This test is skipped if the log file is bigger than 1GB for performance reasons
-    fsize=$(du -k "$p4logfile" | cut -f 1)
-    if [[ "$fsize" -gt 1000000 ]]; then
-        return
-    fi
 
     # Get the current timestamp and linecount
     p4log_ts_curr=$(stat -c %Y $p4logfile)
@@ -266,7 +262,7 @@ monitor_checkpoint () {
     # both write to checkpoint.log!
     # The strings searched for have been present in SDP logs for years now...
 
-    [[ $UseSDP -eq 0 ]] && return   # Not valid if SDP not in use
+    #[[ $UseSDP -eq 0 ]] && return   # Not valid if SDP not in use
     
     fname="$metrics_root/p4_checkpoint${sdpinst_suffix}-${SERVER_ID}.prom"
     tmpfname="$fname.$$"
@@ -275,15 +271,16 @@ monitor_checkpoint () {
     echo "#TYPE p4_sdp_checkpoint_log_time gauge" >> "$tmpfname"
 
     # Look for latest checkpoint log which has Start/End (avoids run in progress and rotate_journal logs)
-    ckp_log=""
+    ckp_log=$(find $p4root  -maxdepth 1 -type f -regextype egrep -regex '.*/checkpoint.[0-9]+' -exec ls -1t {} +  | head -1
+    )
 #    for f in $(ls -t /p4/$SDP_INSTANCE/logs/checkpoint.log*);
-    for f in $(find -L /p4/$SDP_INSTANCE/logs -type f -name checkpoint.log* -exec ls -t {} +)
-    do
-        if [[ `grep -cE "Start p4_$SDP_INSTANCE Checkpoint|End p4_$SDP_INSTANCE Checkpoint" $f` -eq 2 ]]; then
-            ckp_log="$f"
-            break
-        fi;
-    done
+    #for f in $(find -maxdepth 1 -L $p4root -type f -name checkpoint.* -exec ls -t {} +)
+    #do
+    #    if [[ `grep -cE "Start p4_$SDP_INSTANCE Checkpoint|End p4_$SDP_INSTANCE Checkpoint" $f` -eq 2 ]]; then
+    #        ckp_log="$f"
+    #        break
+    #    fi;
+    #done
     ckp_time=0
     if [[ ! -z "$ckp_log" ]]; then
         ckp_time=$(date -r "$ckp_log" +"%s")
@@ -295,10 +292,12 @@ monitor_checkpoint () {
 
     ckp_duration=0
     if [[ ! -z "$ckp_log" && $ckp_time -gt 0 ]]; then
-        dt=$(grep "Start p4_$SDP_INSTANCE Checkpoint" "$ckp_log" | sed -e 's/\/p4.*//')
-        start_time=$(date -d "$dt" +"%s")
-        dt=$(grep "End p4_$SDP_INSTANCE Checkpoint" "$ckp_log" | sed -e 's/\/p4.*//')
-        end_time=$(date -d "$dt" +"%s")
+        #dt=$(grep "Start p4_$SDP_INSTANCE Checkpoint" "$ckp_log" | sed -e 's/\/p4.*//')
+	start_time=$(head -1 "$ckp_log" | awk '{print $3}')
+        #start_time=$(date -d "$dt" +"%s")
+        #dt=$(grep "End p4_$SDP_INSTANCE Checkpoint" "$ckp_log" | sed -e 's/\/p4.*//')
+        end_time=$(tail -1 "$ckp_log" | awk '{print $3}')
+        #end_time=$(date -d "$dt" +"%s")
         ckp_duration=$(($end_time - $start_time))
     fi
     echo "p4_sdp_checkpoint_duration{${serverid_label}${sdpinst_label}} $ckp_duration" >> "$tmpfname"

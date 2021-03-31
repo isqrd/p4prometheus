@@ -11,7 +11,7 @@
 #
 
 # This might also be /hxlogs/metrics or /var/metrics
-metrics_root=/p4/metrics
+metrics_root=/var/lib/prometheus/node-exporter/
 
 
 function msg () { echo -e "$*"; }
@@ -39,7 +39,7 @@ monitor_wrapper.sh -h
 # Command Line Processing
  
 declare -i shiftArgs=0
-declare -i UseSDP=1
+declare -i UseSDP=0
 
 set +u
 while [[ $# -gt 0 ]]; do
@@ -103,28 +103,29 @@ else
 fi
 
 # Get server id
-SERVER_ID=$($p4 serverid | awk '{print $3}')
+SERVER_ID=$($p4 configure show  | egrep serverid | awk -F'=| ' '{print $2}')
 SERVER_ID=${SERVER_ID:-noserverid}
 serverid_label="serverid=\"$SERVER_ID\""
 
-SDP_INSTANCE=${SDP_INSTANCE:-Unset}
-SDP_INSTANCE=${1:-$SDP_INSTANCE}
-if [[ $SDP_INSTANCE == Unset ]]; then
-   echo -e "\\nError: Instance parameter not supplied.\\n"
-   echo "You must supply the Perforce SDP instance as a parameter to this script."
-   exit 1
-fi
+#SDP_INSTANCE=${SDP_INSTANCE:-Unset}
+#SDP_INSTANCE=${1:-$SDP_INSTANCE}
+#if [[ $SDP_INSTANCE == Unset ]]; then
+#   echo -e "\\nError: Instance parameter not supplied.\\n"
+#   echo "You must supply the Perforce SDP instance as a parameter to this script."
+#   exit 1
+#fi
 
 # Load SDP controlled shell environment.
 # shellcheck disable=SC1091
-source /p4/common/bin/p4_vars "$SDP_INSTANCE" ||\
-   { echo -e "\\nError: Failed to load SDP environment.\\n"; exit 1; }
-
+#source /p4/common/bin/p4_vars "$SDP_INSTANCE" ||\
+#   { echo -e "\\nError: Failed to load SDP environment.\\n"; exit 1; }
+#
+export P4BIN=${P4BIN:-/usr/bin/p4}
 p4="$P4BIN -u $P4USER -p $P4PORT"
 
 # Get server id
-SERVER_ID=$($p4 serverid | awk '{print $3}')
+#SERVER_ID=$($p4 serverid | awk '{print $3}')
 SERVER_ID=${SERVER_ID:-unset}
 
 # Adjust to your script location if required
-/p4/common/site/bin/monitor_metrics.py  -i "$SDP_INSTANCE" -m "$metrics_root"
+/usr/local/bin/monitor_metrics.py  -u $P4USER -p $P4PORT -m "$metrics_root"
